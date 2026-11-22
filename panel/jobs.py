@@ -53,7 +53,9 @@ def prepare_main(path):
 
 
 def build_probe(src, dst):
-    doc = make_probe_config.build(rules.read_config(src), 7899, os.environ["MIHOMO_SECRET"], "127.0.0.1:9190")
+    doc = make_probe_config.build(
+        rules.read_config(src), 7899, os.environ["MIHOMO_SECRET"], "127.0.0.1:9190", allow_empty=True,
+    )
     rules.atomic_text(dst, yaml.safe_dump(doc, allow_unicode=True, sort_keys=False))
     check(dst, PROBE_DIR)
 
@@ -72,13 +74,14 @@ def stage_sources(scratch):
 def save_subscriptions(scratch):
     pending = scratch / "pending"
     cache = DATA / "subscription-cache"
-    active = set((pending / "active").read_text().splitlines())
+    retained = set((pending / "retained").read_text().splitlines())
     for source in pending.glob("*.yaml"):
         source.chmod(0o600)
         os.replace(source, cache / source.name)
     for saved in cache.glob("*.yaml"):
-        if saved.name not in active:
+        if saved.name not in retained:
             saved.unlink()
+    subscriptions.pending_marker(DATA / "secrets/subscriptions.yaml").unlink(missing_ok=True)
 
 
 def install_config(candidate):
@@ -91,7 +94,8 @@ def bootstrap(scratch):
     rulesets.seed()
     candidate = scratch / CONFIG.name
     probe = scratch / PROBE_CONFIG.name
-    if (ARTIFACTS / ".config-installed").is_file() and CONFIG.is_file():
+    pending = subscriptions.pending_marker(DATA / "secrets/subscriptions.yaml")
+    if not pending.exists() and (ARTIFACTS / ".config-installed").is_file() and CONFIG.is_file():
         try:
             atomic_copy(CONFIG, candidate)
             merge.restore(candidate)
@@ -145,9 +149,13 @@ def warm():
             "expected": state.get("expectedStatus") or group.get("expected-status") or "*",
             "timeout": 6000,
         })
+        nodes = dict.fromkeys(state.get("all") or [])
+        nodes.pop("REJECT", None)
+        if not nodes:
+            continue
         # The group delay endpoint clears the fixed selection, including the watchdog's pin.
         with ThreadPoolExecutor(max_workers=16) as workers:
-            results = list(workers.map(lambda node: probe(node, query), dict.fromkeys(state.get("all") or [])))
+            results = list(workers.map(lambda node: probe(node, query), nodes))
         if not any(results):
             print(f"Group probe unavailable: {group['name']}", file=sys.stderr)
 
@@ -205,7 +213,7 @@ def refresh(scratch, skip_score):
     rulesets.pin_installed(candidate)
     save_subscriptions(scratch)
     warm()
-    if skip_score:
+    if skip_score or (not sources and not rules.read_config(candidate).get("proxies")):
         return degraded
     if os.environ.get("PURITY_ENABLED", "1") == "1":
         try:

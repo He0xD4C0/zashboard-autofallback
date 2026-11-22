@@ -21,7 +21,7 @@
 		reverse_proxy 127.0.0.1:9081
 	}
 
-	@manager path /autofallback/core /autofallback/state.json /autofallback/rules
+	@manager path /autofallback/core /autofallback/state.json /autofallback/rules /autofallback/subscriptions
 	handle @manager {
 		reverse_proxy 127.0.0.1:9081
 	}

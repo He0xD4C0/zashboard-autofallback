@@ -64,7 +64,6 @@ if __name__ == "__main__" and not __package__:
 from tools.rules import RULE_SET_REFERENCE, required_rules
 
 PLACEHOLDER_MARKERS = ("未授权", "已过期", "需要续费", "请先关闭代理")
-MIN_PROXIES = 20
 
 # 运行期参数一律由环境变量给出，仓库里不出现任何密钥或固定端口。
 # MIHOMO_SECRET 必填：它是面板与 shell 访问内核 API 的唯一凭据。
@@ -578,10 +577,16 @@ def configure_inbound(cfg):
 def restore(path):
     with open(path, encoding="utf-8") as fh:
         cfg = yaml.safe_load(fh)
-    if not isinstance(cfg, dict) or not cfg.get("proxies"):
+    if not isinstance(cfg, dict):
         raise SystemExit("installed configuration has no nodes")
     configure_inbound(cfg)
     cfg["proxy-groups"] = [group for group in cfg.get("proxy-groups", []) if group.get("name") == EXIT_GROUP]
+    if not cfg.get("proxies") and not (
+        cfg.get("proxies") == []
+        and len(cfg["proxy-groups"]) == 1
+        and cfg["proxy-groups"][0].get("proxies") == ["REJECT"]
+    ):
+        raise SystemExit("installed configuration has no nodes")
     cfg["rules"] = [*_map_rules(cfg.get("rules", [])), f"MATCH,{EXIT_GROUP}"]
     _assert_policy(cfg)
     with open(path, "w", encoding="utf-8") as fh:
@@ -596,14 +601,9 @@ def main(dst: str, srcs: list) -> None:
 
     # The first pool entry supplies the template and optional subscription rules.
     # Every pool supplies nodes to the common exit.
-    cfg = docs[0][1]
+    cfg = docs[0][1] if docs else {"mode": "rule"}
     proxies = _merge([(tag, doc.get("proxies") or []) for tag, doc in docs])
     names = [str(p["name"]) for p in proxies]
-    # Per-entry sanity lives in _load_source; this is the pool-level guard: a
-    # refresh that lost every node must not install a config whose fallback
-    # groups have nothing to dial.
-    if len(names) < MIN_PROXIES:
-        raise SystemExit(f"rejected: pool has only {len(names)} proxies (< {MIN_PROXIES})")
 
     for key in (
         "port",
@@ -636,7 +636,7 @@ def main(dst: str, srcs: list) -> None:
     nodes = local_names + [
         n for n in names if n and not _blocked(n) and n not in local_names
     ]
-    if not nodes:
+    if not nodes and docs:
         raise SystemExit("rejected: no usable nodes for exit group")
 
     scores = _score_table()
@@ -656,7 +656,7 @@ def main(dst: str, srcs: list) -> None:
     exit_group = {
         "name": EXIT_GROUP,
         "type": "fallback",
-        "proxies": _rank(nodes, scores),
+        "proxies": _rank(nodes, scores) or ["REJECT"],
         "url": HEALTH_URL,
         "interval": HEALTH_INTERVAL,
         "timeout": 3000,

@@ -16,9 +16,9 @@ import tempfile
 import yaml
 
 
-def build(main: dict, mixed_port: int, secret: str, api: str) -> dict:
+def build(main: dict, mixed_port: int, secret: str, api: str, *, allow_empty=False) -> dict:
     proxies = main.get("proxies") or []
-    if not proxies:
+    if not proxies and not (allow_empty and main.get("proxies") == []):
         raise SystemExit("rejected: source config has no proxies")
     return {
         "mixed-port": mixed_port,

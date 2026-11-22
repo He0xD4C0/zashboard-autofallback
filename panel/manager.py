@@ -15,9 +15,9 @@ from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlsplit
 
-from panel import releases, rulesets
+from panel import releases, rulesets, subscriptions
 from panel.runtime import (
-    ARTIFACTS, CACHE, CONFIG, DIAGNOSTICS, MANAGER_PORT, PROBE_CONFIG, PROBE_DIR,
+    ARTIFACTS, CACHE, CONFIG, DATA, DIAGNOSTICS, MANAGER_PORT, PROBE_CONFIG, PROBE_DIR,
     RUNTIME, atomic_copy, kernel, terminate, wait_ready,
 )
 from tools.rules import atomic_text, read_config, required_rules
@@ -45,6 +45,8 @@ class CoreManager:
             self.state.update(json.loads(self.state_file.read_text()))
         self.cache_backup = RUNTIME / "switch-cache.db"
         self.switch_marker = RUNTIME / "switch.json"
+        self.subscription_pool = DATA / "secrets/subscriptions.yaml"
+        self.subscription_cache = DATA / "subscription-cache"
         self.recover_switch()
         self.secret = os.environ["MIHOMO_SECRET"]
         if not self.secret:
@@ -129,6 +131,24 @@ class CoreManager:
                 self.launch(identifier)
             return identifier
 
+    def subscription_status(self):
+        with self.lock:
+            return subscriptions.listing(self.subscription_pool, self.subscription_cache)
+
+    def update_subscriptions(self, body):
+        with self.lock:
+            if self.shutting_down.is_set():
+                raise RuntimeError("Panel is shutting down")
+            if self.active is not None:
+                raise RuntimeError("another Panel operation is running")
+            if body["action"] != "apply":
+                subscriptions.mutate(self.subscription_pool, self.subscription_cache, body)
+            if subscriptions.pending_marker(self.subscription_pool).exists():
+                self.next_start = 0
+                if self.phase == "running":
+                    return self.submit("refresh", skip_score=True)
+            return None
+
     def interrupt_job(self):
         try:
             os.killpg(self.child.pid, signal.SIGTERM)
@@ -166,7 +186,10 @@ class CoreManager:
         finally:
             with self.lock:
                 if job.action == "refresh":
-                    self.next_refresh = time.monotonic() + self.refresh_interval
+                    interval = self.refresh_interval
+                    if subscriptions.pending_marker(self.subscription_pool).exists():
+                        interval = min(interval, self.watchdog_interval)
+                    self.next_refresh = time.monotonic() + interval
                 if job.action == "watchdog":
                     self.next_watchdog = time.monotonic() + self.watchdog_interval
                 self.active = None
@@ -349,7 +372,8 @@ class CoreManager:
                                            env=self.task_env(binary), start_new_session=True)
                 self.next_watchdog = now + self.watchdog_interval
             if self.active is None and now >= self.next_refresh:
-                self.submit("refresh")
+                pending = subscriptions.pending_marker(self.subscription_pool).exists()
+                self.submit("refresh", skip_score=pending)
 
     def close(self):
         self.shutting_down.set()
@@ -391,7 +415,8 @@ class Handler(BaseHTTPRequestHandler):
         if url.path == "/healthz":
             self.send_json(200, {"status": "ok"})
             return
-        if url.path not in {"/autofallback/core", "/autofallback/state.json", "/autofallback/rules"}:
+        if url.path not in {"/autofallback/core", "/autofallback/state.json",
+                            "/autofallback/rules", "/autofallback/subscriptions"}:
             self.send_json(404, {"error": "not found"})
             return
         if not self.authenticated():
@@ -410,6 +435,13 @@ class Handler(BaseHTTPRequestHandler):
             except FileNotFoundError:
                 source = None
             self.send_json(200, {"source": source})
+        elif url.path == "/autofallback/subscriptions":
+            try:
+                status = self.server.core.subscription_status()
+            except (OSError, ValueError):
+                self.send_json(500, {"error": "could not read subscription pool"})
+            else:
+                self.send_json(200, status)
         else:
             try:
                 snapshot = (DIAGNOSTICS / "state.json").read_bytes()
@@ -420,7 +452,11 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         path = urlsplit(self.path).path
-        actions = {"/autofallback/core": PUBLIC, "/internal/tasks": TASKS}.get(path)
+        subscription_request = path == "/autofallback/subscriptions"
+        actions = {
+            "/autofallback/core": PUBLIC, "/internal/tasks": TASKS,
+            "/autofallback/subscriptions": subscriptions.MUTATIONS,
+        }.get(path)
         if actions is None:
             self.send_json(404, {"error": "not found"})
             return
@@ -434,20 +470,26 @@ class Handler(BaseHTTPRequestHandler):
                 return
         try:
             size = int(self.headers.get("Content-Length", 0))
-            if not 1 <= size <= 2048 or self.headers.get_content_type() != "application/json":
+            limit = 8192 if subscription_request else 2048
+            if not 1 <= size <= limit or self.headers.get_content_type() != "application/json":
                 raise ValueError("expected a small JSON request")
             body = json.loads(self.rfile.read(size))
             if not isinstance(body, dict) or not isinstance(body.get("action"), str) or body["action"] not in actions:
                 raise ValueError("unknown Panel action")
-            identifier = self.server.core.submit(
-                body["action"], body.get("version", ""), body.get("skipScore") is True, body.get("url", "")
-            )
+            if subscription_request:
+                identifier = self.server.core.update_subscriptions(body)
+            else:
+                identifier = self.server.core.submit(
+                    body["action"], body.get("version", ""), body.get("skipScore") is True, body.get("url", "")
+                )
         except (ValueError, UnicodeError) as exc:
             self.send_json(400, {"error": str(exc) if not isinstance(exc, json.JSONDecodeError) else "invalid JSON"})
         except RuntimeError as exc:
             self.send_json(409, {"error": str(exc)})
+        except OSError:
+            self.send_json(500, {"error": "could not save subscription pool"})
         else:
-            self.send_json(202, {"job": identifier})
+            self.send_json(202 if identifier else 200, {"job": identifier})
 
 
 def main():

@@ -1,6 +1,17 @@
 import type { LANG_MESSAGE } from './en'
 
 const ru: LANG_MESSAGE = {
+  managedSubscriptions: 'Подписки',
+  managedSubscriptionUrl: 'Ссылка подписки',
+  managedSubscriptionAdd: 'Добавить подписку',
+  managedSubscriptionEnable: 'Включить',
+  managedSubscriptionDisable: 'Отключить',
+  managedSubscriptionEnabled: 'Включена',
+  managedSubscriptionDisabled: 'Отключена',
+  managedSubscriptionCached: 'Узлы сохранены',
+  managedSubscriptionPending: 'Изменения сохранены и ожидают применения.',
+  managedSubscriptionApply: 'Повторить применение',
+  managedSubscriptionConfirmDelete: 'Удалить подписку и сохранённые узлы?',
   managedCore: 'Управление Mihomo',
   managedCoreStatus: 'Состояние ядра',
   managedCoreVersion: 'Текущая версия',

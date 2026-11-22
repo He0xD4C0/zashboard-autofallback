@@ -1,6 +1,17 @@
 import type { LANG_MESSAGE } from './en'
 
 const zh: LANG_MESSAGE = {
+  managedSubscriptions: '订阅管理',
+  managedSubscriptionUrl: '订阅链接',
+  managedSubscriptionAdd: '添加订阅',
+  managedSubscriptionEnable: '启用',
+  managedSubscriptionDisable: '停用',
+  managedSubscriptionEnabled: '已启用',
+  managedSubscriptionDisabled: '已停用',
+  managedSubscriptionCached: '节点已缓存',
+  managedSubscriptionPending: '更改已保存，等待应用到内核。',
+  managedSubscriptionApply: '重试应用',
+  managedSubscriptionConfirmDelete: '删除这条订阅及其缓存节点？',
   managedCore: '内核管理',
   managedCoreStatus: '内核状态',
   managedCoreVersion: '当前版本',

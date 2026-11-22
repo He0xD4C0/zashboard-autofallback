@@ -48,6 +48,57 @@
         <button class="btn btn-primary" :disabled="!!job || waiting">{{ t('upgradeCore') }}</button>
       </form>
 
+      <section v-if="subscriptionPool" class="mt-6 space-y-3">
+        <h2 class="font-semibold">{{ t('managedSubscriptions') }}</h2>
+        <ul v-if="subscriptionPool.subscriptions.length" class="divide-y divide-base-300">
+          <li v-for="source in subscriptionPool.subscriptions" :key="source.name"
+            class="flex flex-wrap items-center justify-between gap-2 py-2">
+            <div class="min-w-0">
+              <div class="break-all font-medium">{{ source.name }}</div>
+              <div class="break-all text-xs opacity-70">
+                {{ source.host }} · {{ t(source.enabled ? 'managedSubscriptionEnabled' : 'managedSubscriptionDisabled') }}
+                <span v-if="source.cached"> · {{ t('managedSubscriptionCached') }}</span>
+              </div>
+            </div>
+            <div class="flex gap-2">
+              <button class="btn btn-sm" :disabled="!!job || waiting || state.busy"
+                @click="updateSubscription({ action: source.enabled ? 'disable' : 'enable', name: source.name })">
+                {{ t(source.enabled ? 'managedSubscriptionDisable' : 'managedSubscriptionEnable') }}
+              </button>
+              <button class="btn btn-sm btn-ghost text-error" :disabled="!!job || waiting || state.busy"
+                @click="updateSubscription({ action: 'delete', name: source.name })">{{ t('delete') }}</button>
+            </div>
+          </li>
+        </ul>
+        <p v-else class="text-sm opacity-70">{{ t('noData') }}</p>
+        <form class="flex flex-wrap items-end gap-2" @submit.prevent="addSubscription">
+          <label class="form-control">
+            <span class="mb-1 text-sm">{{ t('name') }}</span>
+            <input v-model.trim="subscriptionName" class="input input-bordered"
+              pattern="[a-z0-9][a-z0-9_\x2d]{0,31}" maxlength="32" required />
+          </label>
+          <label class="form-control min-w-0 flex-1">
+            <span class="mb-1 text-sm">{{ t('managedSubscriptionUrl') }}</span>
+            <input v-model.trim="subscriptionUrl" class="input input-bordered w-full" type="url"
+              autocomplete="off" maxlength="2048" required />
+          </label>
+          <label class="flex items-center gap-2 text-sm">
+            <input v-model="subscriptionEnabled" type="checkbox" class="checkbox checkbox-sm" />
+            {{ t('managedSubscriptionEnable') }}
+          </label>
+          <button class="btn btn-primary" :disabled="!!job || waiting || state.busy">
+            {{ t('managedSubscriptionAdd') }}
+          </button>
+        </form>
+        <div v-if="subscriptionPool.pending" class="flex flex-wrap items-center gap-2 text-sm">
+          <p role="status">{{ t('managedSubscriptionPending') }}</p>
+          <button v-if="state.status === 'running'" class="btn btn-sm"
+            :disabled="!!job || waiting || state.busy" @click="updateSubscription({ action: 'apply' })">
+            {{ t('managedSubscriptionApply') }}
+          </button>
+        </div>
+      </section>
+
       <section class="mt-6 space-y-2">
         <h2 class="font-semibold">{{ t('managedRules') }}</h2>
         <p class="text-sm">{{ t('managedRulesCurrent') }} {{ ruleSource || t('managedRulesPreset') }}</p>
@@ -81,12 +132,21 @@ import { onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 type Action = 'start' | 'stop' | 'restart' | 'upgrade' | 'rollback' | 'rules'
+type SubscriptionMutation =
+  | { action: 'add'; name: string; url: string; enabled: boolean }
+  | { action: 'delete' | 'enable' | 'disable'; name: string }
+  | { action: 'apply' }
+type SubscriptionPool = {
+  subscriptions: { name: string; enabled: boolean; host: string; cached: boolean }[]
+  pending: boolean
+}
 type CoreState = {
   status: 'running' | 'stopped' | 'starting' | 'stopping' | 'failed'
   current: string | null
   previous: string | null
   message: string
-  job?: { action: Action; status: 'running' | 'ok' | 'failed'; message: string }
+  busy: boolean
+  job?: { action: Action | 'refresh'; status: 'running' | 'ok' | 'failed'; message: string }
 }
 
 const { t } = useI18n()
@@ -97,11 +157,16 @@ const rulesUrl = ref('')
 const ruleSource = ref('')
 const rulesUpdated = ref(false)
 const managedRulesUrl = new URL('./autofallback/rules', window.location.href)
+const subscriptionsUrl = new URL('./autofallback/subscriptions', window.location.href)
+const subscriptionPool = ref<SubscriptionPool>()
+const subscriptionName = ref('')
+const subscriptionUrl = ref('')
+const subscriptionEnabled = ref(true)
 const job = ref('')
 const waiting = ref(false)
 const error = ref('')
 
-async function request(url: URL, body?: { action: Action; version?: string; url?: string }) {
+async function request(url: URL, body?: { action: Action; version?: string; url?: string } | SubscriptionMutation) {
   const response = await fetch(url, {
     method: body ? 'POST' : 'GET',
     headers: {
@@ -115,6 +180,7 @@ async function request(url: URL, body?: { action: Action; version?: string; url?
   })
   if (response.status === 401) {
     state.value = undefined
+    subscriptionPool.value = undefined
     job.value = ''
     throw new Error(t('unauthorizedTip'))
   }
@@ -136,6 +202,7 @@ async function refresh() {
     if (job.value) url.searchParams.set('job', job.value)
     const first = !state.value
     const next: CoreState = await request(url)
+    state.value = next
     if (next.job && next.job.status !== 'running') {
       error.value = next.job.message
       rulesUpdated.value = next.job.action === 'rules' && next.job.status === 'ok'
@@ -146,7 +213,9 @@ async function refresh() {
       ruleSource.value = source || ''
       rulesUrl.value = ruleSource.value
     }
-    state.value = next
+    if (!subscriptionPool.value || subscriptionPool.value.pending || next.job?.action === 'refresh') {
+      subscriptionPool.value = await request(subscriptionsUrl)
+    }
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : t('managedCoreUnavailable')
   } finally {
@@ -173,6 +242,35 @@ async function run(action: Action) {
     waiting.value = false
   }
   void refresh()
+}
+
+async function updateSubscription(body: SubscriptionMutation) {
+  if (waiting.value || job.value) return
+  if (body.action === 'delete' && !window.confirm(t('managedSubscriptionConfirmDelete'))) return
+  error.value = ''
+  waiting.value = true
+  try {
+    const data = await request(subscriptionsUrl, body)
+    job.value = data.job || ''
+    if (body.action === 'add') {
+      subscriptionName.value = ''
+      subscriptionUrl.value = ''
+      subscriptionEnabled.value = true
+    }
+    subscriptionPool.value = await request(subscriptionsUrl)
+  } catch (cause) {
+    error.value = cause instanceof Error ? cause.message : t('managedCoreUnavailable')
+  } finally {
+    waiting.value = false
+  }
+  void refresh()
+}
+
+function addSubscription() {
+  void updateSubscription({
+    action: 'add', name: subscriptionName.value, url: subscriptionUrl.value,
+    enabled: subscriptionEnabled.value,
+  })
 }
 
 onMounted(refresh)

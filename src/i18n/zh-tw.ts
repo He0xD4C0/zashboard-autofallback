@@ -1,6 +1,17 @@
 import type { LANG_MESSAGE } from './en'
 
 const zhTW: LANG_MESSAGE = {
+  managedSubscriptions: '訂閱管理',
+  managedSubscriptionUrl: '訂閱連結',
+  managedSubscriptionAdd: '新增訂閱',
+  managedSubscriptionEnable: '啟用',
+  managedSubscriptionDisable: '停用',
+  managedSubscriptionEnabled: '已啟用',
+  managedSubscriptionDisabled: '已停用',
+  managedSubscriptionCached: '節點已快取',
+  managedSubscriptionPending: '變更已儲存，等待套用至核心。',
+  managedSubscriptionApply: '重試套用',
+  managedSubscriptionConfirmDelete: '刪除這筆訂閱及其快取節點？',
   managedCore: '核心管理',
   managedCoreStatus: '核心狀態',
   managedCoreVersion: '目前版本',
