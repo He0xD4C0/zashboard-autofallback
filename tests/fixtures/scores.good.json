@@ -1,0 +1,67 @@
+{
+ "generated": "2026-01-01T00:00:00+08:00",
+ "samples": 2,
+ "platforms": {
+  "gstatic": 0.5,
+  "ai": 0.25,
+  "site": 0.25
+ },
+ "prefer": ["jp"],
+ "prefer_bonus": 5.0,
+ "nodes": {
+  "node-a": {
+   "overall": 90.0,
+   "final": 95.0,
+   "region": "jp",
+   "preferred": true,
+   "bonus": 5.0,
+   "platforms": {
+    "gstatic": {
+     "score": 100.0,
+     "availability": 1.0,
+     "median_ms": 120.0,
+     "jitter_ms": 3.0,
+     "attempts": 2,
+     "ok": 2,
+     "samples": [118.0, 122.0]
+    },
+    "ai": {
+     "score": 88.0,
+     "availability": 1.0,
+     "median_ms": 350.0,
+     "jitter_ms": null,
+     "attempts": 2,
+     "ok": 2,
+     "samples": [340.0, 360.0]
+    },
+    "site": {
+     "score": 70.0,
+     "availability": 0.5,
+     "median_ms": 420.0,
+     "jitter_ms": null,
+     "attempts": 2,
+     "ok": 1,
+     "samples": [420.0, null]
+    }
+   }
+  },
+  "node-b": {
+   "overall": 0.0,
+   "final": 0.0,
+   "region": "unknown",
+   "preferred": false,
+   "bonus": 0.0,
+   "platforms": {
+    "gstatic": {
+     "score": 0.0,
+     "availability": 0.0,
+     "median_ms": null,
+     "jitter_ms": null,
+     "attempts": 2,
+     "ok": 0,
+     "samples": [null, null]
+    }
+   }
+  }
+ }
+}

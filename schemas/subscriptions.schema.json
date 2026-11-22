@@ -1,0 +1,33 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://example.invalid/schemas/subscriptions.schema.json",
+  "title": "subscription pool",
+  "description": "订阅池清单。顺序即优先级：fallback 组按此顺序挑第一个健康节点，因此文件顺序是有语义的数据，不允许工具重排。",
+  "type": "object",
+  "required": ["subscriptions"],
+  "additionalProperties": false,
+  "properties": {
+    "subscriptions": {
+      "type": "array",
+      "minItems": 1,
+      "description": "至少一条；条目按出现顺序生效",
+      "items": {
+        "type": "object",
+        "required": ["name", "url"],
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9_-]{0,31}$",
+            "description": "池标签，用于文件名与重名节点的 [tag] 前缀，同一文件内必须唯一"
+          },
+          "url": {
+            "type": "string",
+            "pattern": "^(https?|file)://\\S+$",
+            "description": "订阅地址；含令牌，文件权限 0600，绝不入库。file:// 仅用于离线开发栈，生产必须是 http(s)"
+          }
+        }
+      }
+    }
+  }
+}

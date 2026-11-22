@@ -1,0 +1,114 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://example.invalid/schemas/scores.schema.json",
+  "title": "node score snapshot",
+  "description": "score 工具的输出。一个文件一代快照：节点指标按平台记录，另有一份原始采样序列，便于事后判断抖动与漂移。",
+  "type": "object",
+  "required": ["generated", "samples", "platforms", "nodes"],
+  "additionalProperties": true,
+  "properties": {
+    "generated": {
+      "type": "string",
+      "format": "date-time",
+      "description": "快照生成时间（带时区偏移）"
+    },
+    "samples": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "每个节点每个平台的探测次数"
+    },
+    "platforms": {
+      "type": "object",
+      "description": "平台名 -> 权重，权重之和应接近 1.0",
+      "minProperties": 1,
+      "additionalProperties": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 1
+      }
+    },
+    "purity_weight": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "IP 纯净度维度在总分中的权重；与 platforms 各项权重之和恒为 1.0"
+    },
+    "prefer": {
+      "type": "array",
+      "description": "偏好地区代码列表",
+      "items": {"type": "string", "minLength": 2, "maxLength": 8}
+    },
+    "prefer_bonus": {
+      "type": "number",
+      "minimum": 0,
+      "description": "偏好地区加分（排序用，非百分比）"
+    },
+    "nodes": {
+      "type": "object",
+      "description": "节点显示名 -> 指标。显示名是订阅原名，改名即等于换了一代分数。",
+      "minProperties": 1,
+      "additionalProperties": {
+        "type": "object",
+        "required": ["overall", "final", "region", "platforms"],
+        "additionalProperties": true,
+        "properties": {
+          "overall": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100,
+            "description": "平台加权分，0-100"
+          },
+          "final": {
+            "type": "number",
+            "minimum": 0,
+            "description": "overall + 偏好加分，仅作排序键，可超过 100"
+          },
+          "region": {
+            "type": "string",
+            "description": "地区代码；无法识别时为 unknown"
+          },
+          "preferred": {"type": "boolean"},
+          "purity": {
+            "type": "object",
+            "description": "IP 纯净度（来自外部 IP 情报接口）：住宅/移动高、机房低、被判定代理最低",
+            "required": ["score"],
+            "additionalProperties": true,
+            "properties": {
+              "score": {"type": "number", "minimum": 0, "maximum": 100},
+              "ip": {"type": ["string", "null"]},
+              "country_code": {"type": ["string", "null"]},
+              "claimed": {"type": ["string", "null"]},
+              "region_match": {"type": ["boolean", "null"]},
+              "hosting": {"type": ["boolean", "null"]},
+              "proxy": {"type": ["boolean", "null"]},
+              "reason": {"type": ["string", "null"]}
+            }
+          },
+          "bonus": {"type": "number", "minimum": 0},
+          "platforms": {
+            "type": "object",
+            "minProperties": 1,
+            "additionalProperties": {
+              "type": "object",
+              "required": ["score", "availability", "attempts", "ok", "samples"],
+              "additionalProperties": true,
+              "properties": {
+                "score": {"type": "number", "minimum": 0, "maximum": 100},
+                "availability": {"type": "number", "minimum": 0, "maximum": 1},
+                "median_ms": {"type": ["number", "null"], "minimum": 0},
+                "jitter_ms": {"type": ["number", "null"], "minimum": 0},
+                "attempts": {"type": "integer", "minimum": 1},
+                "ok": {"type": "integer", "minimum": 0},
+                "samples": {
+                  "type": "array",
+                  "description": "按探测顺序记录的延迟，失败为 null",
+                  "items": {"type": ["number", "null"], "minimum": 0}
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

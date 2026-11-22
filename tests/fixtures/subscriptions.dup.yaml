@@ -1,0 +1,6 @@
+# 两个字段都合法、但池标签重复：schema 看不出（数组内唯一性），必须由校验代码兜住。
+subscriptions:
+  - name: primary
+    url: https://sub.example.com/a
+  - name: primary
+    url: https://sub.example.com/b

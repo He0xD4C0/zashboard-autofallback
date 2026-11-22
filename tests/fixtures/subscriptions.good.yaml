@@ -1,0 +1,6 @@
+# 订阅池示例：顺序即优先级，第一条是骨架（组与规则模板）。
+subscriptions:
+  - name: primary
+    url: https://sub.example.com/api/v1/clash?token=REDACTED
+  - name: backup
+    url: https://backup.example.net/sub/clash

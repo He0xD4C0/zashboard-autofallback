@@ -13,6 +13,7 @@ import { BACKEND_ITEM_KEYS } from '@/config/settings-items'
 import { showConfirmDialog } from '@/helper/confirm-dialog'
 import { notifyActionPending, showNotification } from '@/helper/notification'
 import { notifyRequestError } from '@/helper/request-error'
+import { isManagedBackend } from '@/helper/managed-core'
 import { isSettingHidden } from '@/helper/settings'
 import { i18n } from '@/i18n'
 import { activeBackend } from '@/store/setup'
@@ -92,8 +93,9 @@ export const backendActions = computed<BackendAction[]>(() => {
   if (!activeBackend.value) return []
 
   const actions: BackendAction[] = []
+  const managed = isManagedBackend(activeBackend.value)
 
-  if (can('coreUpgrade') && !activeBackend.value?.disableUpgradeCore) {
+  if (!managed && can('coreUpgrade') && !activeBackend.value?.disableUpgradeCore) {
     actions.push({
       key: k.upgradeCore,
       label: 'upgradeCore',
@@ -104,7 +106,7 @@ export const backendActions = computed<BackendAction[]>(() => {
     })
   }
 
-  if (can('coreRestart')) {
+  if (!managed && can('coreRestart')) {
     actions.push({
       key: k.restartCore,
       label: 'restartCore',
@@ -123,7 +125,7 @@ export const backendActions = computed<BackendAction[]>(() => {
     })
   }
 
-  if (can('reloadConfigs')) {
+  if (!managed && can('reloadConfigs')) {
     actions.push({
       key: k.reloadConfigs,
       label: 'reloadConfigs',
@@ -141,7 +143,7 @@ export const backendActions = computed<BackendAction[]>(() => {
     })
   }
 
-  if (can('updateConfigs')) {
+  if (!managed && can('updateConfigs')) {
     actions.push({
       key: k.updateConfigs,
       label: 'updateConfigs',

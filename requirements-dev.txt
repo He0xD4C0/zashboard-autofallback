@@ -1,0 +1,3 @@
+# 开发与测试依赖（运行期容器内的依赖由 panel/Dockerfile 的 apk 提供）
+PyYAML>=6.0,<7
+jsonschema>=4.0,<5

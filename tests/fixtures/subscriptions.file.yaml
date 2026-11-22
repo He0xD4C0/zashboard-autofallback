@@ -1,0 +1,4 @@
+# 离线开发池：curl 支持 file://，因此不依赖任何网络即可跑通整条数据流。
+subscriptions:
+  - name: offline
+    url: file:///data/dev-subscription.yaml

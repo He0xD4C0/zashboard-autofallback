@@ -132,7 +132,7 @@ watch(
 
 const route = useRoute()
 const visible = computed(
-  () => failed.value && backendManagerView.value === null && route.name !== ROUTE_NAME.setup,
+  () => failed.value && backendManagerView.value === null && route.name !== ROUTE_NAME.setup && route.name !== 'managed-core',
 )
 
 const label = computed(() => (activeBackend.value ? getLabelFromBackend(activeBackend.value) : ''))

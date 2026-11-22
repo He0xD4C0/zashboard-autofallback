@@ -3,6 +3,9 @@
     v-if="hasVisibleItems"
     class="text-sm"
   >
+    <RouterLink v-if="isManagedPanel" :to="{ name: 'managed-core' }" class="btn btn-sm mb-3">
+      {{ $t('managedCore') }}
+    </RouterLink>
     <template v-if="isVisibleBackendSwitch">
       <div class="settings-section-label">{{ $t('settingsSectionCurrentBackend') }}</div>
       <div class="settings-grid">
@@ -199,6 +202,7 @@ import { useIsSettingVisible } from '@/composables/use-setting-visibility'
 import { isSettingVisible } from '@/helper/settings'
 import { BACKEND_ITEM_KEYS } from '@/config/settings-items'
 import { TUN_STACK } from '@/constant'
+import { isManagedBackend, isManagedPanel } from '@/helper/managed-core'
 import { notifyRequestError } from '@/helper/request-error'
 import { autoUpgradeCore, checkUpgradeCore } from '@/store/settings'
 import { activeBackend } from '@/store/setup'
@@ -257,11 +261,13 @@ const hasVisibleUpgradeSettings = computed(
   () =>
     can('configPatch') &&
     !!configs.value &&
+    !isManagedBackend(activeBackend.value) &&
     !activeBackend.value?.disableUpgradeCore &&
     (isVisibleCheckUpgrade.value || (checkUpgradeCore.value && isVisibleAutoUpgrade.value)),
 )
 const hasVisibleItems = computed(
   () =>
+    isManagedBackend(activeBackend.value) ||
     isVisibleBackendSwitch.value ||
     hasVisibleActions.value ||
     hasVisibleNetworkSettings.value ||

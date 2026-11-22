@@ -1,0 +1,23 @@
+# 规则层测试用最小样本：目标组名与上游一致，验证映射与 provider 注入。
+rules:
+  - RULE-SET,Ads,REJECT
+  - RULE-SET,CN,国内流量
+  - RULE-SET,AI,人工智能
+  - DOMAIN-SUFFIX,example.com,国外流量
+  - AND,((DST-PORT,443),(NETWORK,UDP)),REJECT
+rule-providers:
+  Ads:
+    type: http
+    behavior: domain
+    format: mrs
+    url: https://example.com/ads.mrs
+  CN:
+    type: http
+    behavior: domain
+    format: mrs
+    url: https://example.com/cn.mrs
+  AI:
+    type: http
+    behavior: domain
+    format: mrs
+    url: https://example.com/ai.mrs

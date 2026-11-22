@@ -1,0 +1,87 @@
+name: mihomo-stack
+
+services:
+  panel:
+    build:
+      context: .
+      target: managed
+    image: ${ZASHBOARD_IMAGE:-zashboard-autofallback:managed}
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 20s
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    volumes:
+      - data:/data
+    ports:
+      - "0.0.0.0:${DEV_PANEL_PORT:-19091}:8080"
+      - "127.0.0.1:${DEV_API_PORT:-19090}:9091"
+      - "127.0.0.1:${DEV_MIXED_PORT:-17897}:7897"
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+      - DATA_DIR=/data
+      - SCHEMAS_DIR=/opt/stack/schemas
+      - MIHOMO_CONFIG=/data/artifacts/config.yaml
+      - MIHOMO_API=http://127.0.0.1:9090
+      - MIHOMO_SECRET=${DEV_API_SECRET:?set DEV_API_SECRET in .env}
+      - MIHOMO_API_LISTEN=127.0.0.1:9090
+      # 开发栈没有出口容器：留空 -> 不生成 tproxy-port
+      - MIHOMO_TPROXY_PORT=
+      - MIHOMO_MIXED_PORT=7897
+      - MIHOMO_LAN_ALLOWED_IPS=${MIHOMO_LAN_ALLOWED_IPS:-127.0.0.0/8,${MIHOMO_BRIDGE_GATEWAY:-172.30.197.1}/32}
+      - SUBSCRIPTION_CACHE_MAX_AGE=${SUBSCRIPTION_CACHE_MAX_AGE:-86400}
+      - PREFER_REGION=${PREFER_REGION:-jp}
+      - PREFER_BONUS=${PREFER_BONUS:-5}
+      - SCORE_PLATFORMS=${SCORE_PLATFORMS:-all}
+      - SCORE_SAMPLES=${SCORE_SAMPLES:-2}
+      - REFRESH_INTERVAL=${REFRESH_INTERVAL:-21600}
+      # 分数新鲜度阈值 = 2 × 刷新周期（数据契约）
+      - MIHOMO_SCORES_MAX_AGE=${MIHOMO_SCORES_MAX_AGE:-43200}
+      # 定向站点组（可选）：域名与探针必须成对，留空则不启用定向站点评分
+      - MIHOMO_SITE_DOMAINS=${MIHOMO_SITE_DOMAINS:-}
+      - MIHOMO_SITE_HEALTH_URL=${MIHOMO_SITE_HEALTH_URL:-}
+      - MIHOMO_SITE_HEALTH_STATUS=${MIHOMO_SITE_HEALTH_STATUS:-200}
+      - MIHOMO_LOCAL_NODES=/data/secrets/local-nodes.yaml
+      # curated 规则层（rules/henrychiao.yaml）；SUB_RULES=0 表示丢弃订阅自带规则
+      - MIHOMO_SUB_RULES=${MIHOMO_SUB_RULES:-0}
+      # 评分快照供生成配置、评分和诊断导出共用
+      - MIHOMO_SCORES=/data/artifacts/scores.json
+      # 探测内核（按节点发请求、测真实出口 IP）
+      - PROBE_API=http://127.0.0.1:9190
+      - PROBE_PROXY=http://127.0.0.1:7899
+      - MIHOMO_PURITY=/data/artifacts/purity.json
+      # 巡检与纯净度
+      - RUN_LOG=/data/run.log
+      - WATCHDOG_INTERVAL=${WATCHDOG_INTERVAL:-300}
+      - PURITY_ENABLED=${PURITY_ENABLED:-1}
+      - PURITY_PACE=${PURITY_PACE:-1.5}
+      - MIHOMO_PURITY_WEIGHT=${MIHOMO_PURITY_WEIGHT:-0.10}
+      - KEEP_FAILURE=${KEEP_FAILURE:-0}
+      - MIHOMO_INITIAL_VERSION=${MIHOMO_INITIAL_VERSION:-v1.19.33}
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/healthz"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  data:
+    external: true
+    name: ${MIHOMO_DATA_VOLUME:-mihomo-stack_data}
+
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: ${MIHOMO_BRIDGE_SUBNET:-172.30.197.0/24}
+          gateway: ${MIHOMO_BRIDGE_GATEWAY:-172.30.197.1}

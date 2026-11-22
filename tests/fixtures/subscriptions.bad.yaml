@@ -1,0 +1,6 @@
+# 两条坏用法：标签重复（池名进文件名与节点前缀）与非法 URL。
+subscriptions:
+  - name: primary
+    url: https://sub.example.com/a
+  - name: primary
+    url: ftp://sub.example.com/b

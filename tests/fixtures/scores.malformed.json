@@ -1,0 +1,20 @@
+{
+ "generated": "2026-01-01T00:00:00+08:00",
+ "samples": 1,
+ "platforms": {"gstatic": 1.0},
+ "nodes": {
+  "good": {
+   "overall": 90.0,
+   "final": 95.0,
+   "region": "jp",
+   "bonus": 5.0,
+   "platforms": {"gstatic": {"score": 90.0}}
+  },
+  "broken": {
+   "overall": "high",
+   "final": "n/a",
+   "bonus": 5.0,
+   "platforms": {"gstatic": {"score": "fast"}}
+  }
+ }
+}

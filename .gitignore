@@ -29,3 +29,14 @@ coverage
 *.sw?
 
 *.tsbuildinfo
+
+# Managed Panel runtime data and local environment
+.env
+.env.*
+!.env.example
+/data/
+/backups/
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/

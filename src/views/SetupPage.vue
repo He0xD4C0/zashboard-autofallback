@@ -44,6 +44,10 @@
         {{ $t('manageBackends') }}
       </button>
 
+      <RouterLink v-if="isManagedPanel" :to="{ name: 'managed-core' }" class="btn btn-ghost btn-sm">
+        {{ $t('managedCore') }}
+      </RouterLink>
+
       <div class="mt-4 sm:hidden">
         <LanguageSelect />
       </div>
@@ -64,6 +68,7 @@ import { ROUTE_NAME } from '@/constant'
 import { syncSettingsFromCore } from '@/helper/auto-import-settings'
 import { useBackendReachability } from '@/composables/use-backend-reachability'
 import { describeProbeFailure } from '@/helper/connectivity'
+import { isManagedPanel } from '@/helper/managed-core'
 import { showNotification } from '@/helper/notification'
 import { getBackendFromUrl, getBackendProbeUrl, getOriginBackend } from '@/helper/utils'
 import router from '@/router'
@@ -84,7 +89,10 @@ const defaultForm: SetupForm = {
 }
 
 const urlBackend = getBackendFromUrl()
-const originBackend = !urlBackend && backendList.value.length === 0 ? getOriginBackend() : null
+const origin = !urlBackend && backendList.value.length === 0 ? getOriginBackend() : null
+const originBackend = isManagedPanel && origin
+  ? { ...origin, secondaryPath: origin.secondaryPath || '/mihomo-api' }
+  : origin
 const form = ref<SetupForm>({ ...(originBackend ?? defaultForm) })
 
 const reachability = useBackendReachability(form)
@@ -172,7 +180,7 @@ const autoDetect = async (candidates: SetupForm[]) => {
   if (controller.signal.aborted) return
   controller.abort()
 
-  form.value = { ...(detected?.backend ?? defaultForm) }
+  form.value = { ...(detected?.backend ?? (isManagedPanel ? candidates[0] : defaultForm)) }
   if (detected?.ok) await login(detected.backend)
 }
 

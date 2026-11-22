@@ -1,0 +1,46 @@
+{
+	admin off
+	auto_https off
+	persist_config off
+}
+
+(controller) {
+	@managed path /upgrade* /restart* /dns-query*
+	respond @managed 404
+
+	@managedConfig {
+		method PUT
+		path /configs /configs/
+	}
+	respond @managedConfig 405
+	reverse_proxy 127.0.0.1:9090
+}
+
+:8080 {
+	handle /healthz {
+		reverse_proxy 127.0.0.1:9081
+	}
+
+	@manager path /autofallback/core /autofallback/state.json /autofallback/rules
+	handle @manager {
+		reverse_proxy 127.0.0.1:9081
+	}
+
+	handle_path /mihomo-api/* {
+		route {
+			import controller
+		}
+	}
+
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
+}
+
+:9091 {
+	route {
+		import controller
+	}
+}

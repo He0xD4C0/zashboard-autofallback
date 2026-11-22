@@ -1,5 +1,6 @@
 import { ROUTE_NAME } from '@/constant'
 import { resolvePageTransition } from '@/helper/page-transition'
+import { isManagedPanel } from '@/helper/managed-core'
 import { getLabelFromBackend } from '@/helper/utils'
 import { i18n } from '@/i18n'
 import { language } from '@/store/settings'
@@ -63,6 +64,11 @@ const router = createRouter({
       component: HomePage,
       children: childrenRouter,
     },
+    ...(isManagedPanel ? [{
+      path: '/core',
+      name: 'managed-core',
+      component: () => import('@/views/ManagedCorePage.vue'),
+    }] : []),
     {
       path: '/setup',
       name: ROUTE_NAME.setup,
@@ -87,7 +93,7 @@ const setTitleByName = (name: string | symbol | undefined) => {
 router.beforeEach((to, from) => {
   resolvePageTransition(to, from)
 
-  if (!activeBackend.value && to.name !== ROUTE_NAME.setup) {
+  if (!activeBackend.value && to.name !== ROUTE_NAME.setup && to.name !== 'managed-core') {
     router.push({ name: ROUTE_NAME.setup, query: to.query })
   }
 })

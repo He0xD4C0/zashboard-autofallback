@@ -56,6 +56,10 @@ To run zashboard via Docker, use the following command:
 docker run -d -p 80:80 ghcr.io/zephyruso/zashboard:latest
 ```
 
+## Managed Mihomo
+
+This fork includes an optional one-container deployment with a managed Mihomo core, a persistent data volume, and rule updates from the dashboard. See the [managed Panel deployment guide](docs/managed-panel.md).
+
 ## Tips
 
 1. The connection table can be dragged with the left mouse button, and right-clicking can copy cell content.

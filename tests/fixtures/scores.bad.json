@@ -1,0 +1,22 @@
+{
+ "samples": 0,
+ "platforms": {
+  "gstatic": 0.5
+ },
+ "nodes": {
+  "node-a": {
+   "overall": 130.0,
+   "final": 95.0,
+   "region": "jp",
+   "platforms": {
+    "gstatic": {
+     "score": 100.0,
+     "availability": 1.5,
+     "attempts": 2,
+     "ok": 2,
+     "samples": "not-a-list"
+    }
+   }
+  }
+ }
+}

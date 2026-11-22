@@ -3,6 +3,7 @@ import HonkLogo from '@/assets/images/honk.svg'
 import MetacubexLogo from '@/assets/images/metacubex.jpg'
 import { MIHOMO, MIHOMO_CHANNEL } from '@/constant'
 import { fetchWithLocalCache } from '@/helper/cache'
+import { isManagedBackend } from '@/helper/managed-core'
 import { getRequestErrorMessage } from '@/helper/request-error'
 import { autoUpgradeCore, autoUpgradeDashboard, checkUpgradeCore } from '@/store/settings'
 import { activeBackend } from '@/store/setup'
@@ -104,7 +105,7 @@ const probeBackendVersion = async (backend: Backend) => {
     message: '',
   }
 
-  if (!can('coreUpdateCheck') || !checkUpgradeCore.value || backend.disableUpgradeCore) return
+  if (isManagedBackend(backend) || !can('coreUpdateCheck') || !checkUpgradeCore.value || backend.disableUpgradeCore) return
 
   isCoreUpdateAvailable.value = await fetchIsCoreUpdateAvailable()
 
