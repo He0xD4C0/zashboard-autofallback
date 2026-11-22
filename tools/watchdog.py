@@ -12,11 +12,13 @@
 """
 
 import argparse
+import fcntl
 import json
 import os
 import sys
 import urllib.parse
 import urllib.request
+from contextlib import contextmanager
 from datetime import datetime, timezone
 
 import yaml
@@ -104,32 +106,62 @@ def probe_node(node: str, targets, timeout_ms: int, token: str):
     return sum("delay" in result for result in detail), detail
 
 
-def reselect(path, state, targets, group_target, timeout_ms, token) -> dict:
+def config_revision(stat):
+    return stat.st_dev, stat.st_ino, stat.st_mtime_ns, stat.st_ctime_ns
+
+
+@contextmanager
+def selection_lock():
+    lock_path = os.environ.get("MIHOMO_CONTROLLER_LOCK")
+    if not lock_path:
+        yield
+        return
+    with open(lock_path, "a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        yield
+
+
+def select_candidate(path, state, candidate, revision, group_probe_failed, token):
+    with selection_lock():
+        if config_revision(os.stat(CONFIG)) != revision:
+            return {"action": "selection-changed"}
+        current = api(path, 10, token)
+        selected, fixed = current.get("now"), current.get("fixed") or ""
+        if any(current.get(key) != state.get(key) for key in ("type", "testUrl", "expectedStatus", "all")):
+            return {"action": "selection-changed", "selected": selected}
+
+        previous_fixed = state.get("fixed") or ""
+        # Fallback clears its own pin when the pinned node fails the group's URL.
+        # Its first automatic choice after clearing the pin can be transient.
+        cleared_by_failure = (
+            state.get("type") == "Fallback" and not fixed
+            and previous_fixed == state["now"] and group_probe_failed
+        )
+        if fixed != previous_fixed and not cleared_by_failure:
+            return {"action": "selection-changed", "selected": selected}
+        if selected != candidate or fixed != candidate:
+            api(path, 10, token, method="PUT", body={"name": candidate})
+            current = api(path, 10, token)
+            selected, fixed = current.get("now"), current.get("fixed")
+        action = "switched" if selected == fixed == candidate else "reselect-unconfirmed"
+        return {"action": action, "selected": selected}
+
+
+def reselect(path, state, targets, group_target, group_probe_failed, revision, timeout_ms, token) -> dict:
     previous = state["now"]
     group_url, group_expected = group_target
     candidate_targets = {**targets, group_url: group_expected}
     for candidate in state.get("all") or []:
         if candidate == previous or candidate in BUILTIN_PROXIES:
             continue
+        if config_revision(os.stat(CONFIG)) != revision:
+            return {"action": "selection-changed"}
         _, detail = probe_node(candidate, candidate_targets, timeout_ms, token)
         passed = {result["url"] for result in detail if "delay" in result}
         if group_url not in passed or not is_healthy(len(passed.intersection(targets)), len(targets)):
             continue
 
-        # Probing can change Mihomo's automatic selection, and a user can switch
-        # nodes while the probes run. Check the current state before changing it.
-        current = api(path, 10, token)
-        selected = current.get("now")
-        if selected == candidate:
-            return {"action": "switched", "selected": selected}
-        if current.get("fixed") != state.get("fixed") or current.get("testUrl") != state.get("testUrl"):
-            return {"action": "selection-changed", "selected": selected}
-        if candidate not in current.get("all", []):
-            continue
-        api(path, 10, token, method="PUT", body={"name": candidate})
-        selected = api(path, 10, token).get("now")
-        action = "switched" if selected == candidate else "reselect-unconfirmed"
-        return {"action": action, "selected": selected}
+        return select_candidate(path, state, candidate, revision, group_probe_failed, token)
     return {"action": "no-healthy-alternative"}
 
 
@@ -146,6 +178,7 @@ def main(argv) -> int:
 
     token = secret()
     with open(CONFIG, encoding="utf-8") as fh:
+        revision = config_revision(os.fstat(fh.fileno()))
         cfg = yaml.safe_load(fh) or {}
     groups = [
         g for g in (cfg.get("proxy-groups") or [])
@@ -156,10 +189,15 @@ def main(argv) -> int:
 
     problems = 0
     for group in groups:
+        if config_revision(os.stat(CONFIG)) != revision:
+            break
         name = str(group.get("name"))
         path = "/proxies/" + urllib.parse.quote(name, safe="")
         try:
             state = api(path, 10, token)
+            if group["type"] == "fallback" and not state.get("fixed"):
+                # The first read after a failed pin can briefly show a later member.
+                state = api(path, 10, token)
             now = state.get("now")
         except Exception as exc:
             journal({"group": name, "status": "group-unreadable", "detail": str(exc)[:80]})
@@ -184,9 +222,11 @@ def main(argv) -> int:
         if not healthy:
             problems += 1
             entry.update(previous=now, detail=detail)
+            group_probe_failed = any(sample["url"] == group_url and "error" in sample for sample in detail)
             try:
                 entry.update(reselect(
-                    path, state, targets, (group_url, group_expected), args.timeout, token,
+                    path, state, targets, (group_url, group_expected), group_probe_failed,
+                    revision, args.timeout, token,
                 ))
             except Exception as exc:
                 entry["action"] = f"reselect-failed: {str(exc)[:60]}"

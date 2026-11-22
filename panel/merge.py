@@ -54,8 +54,14 @@ import os
 import re
 import sys
 import time
+from pathlib import Path, PurePosixPath
 
 import yaml
+
+if __name__ == "__main__" and not __package__:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from tools.rules import RULE_SET_REFERENCE, required_rules
 
 PLACEHOLDER_MARKERS = ("未授权", "已过期", "需要续费", "请先关闭代理")
 MIN_PROXIES = 20
@@ -404,15 +410,19 @@ def _load_ruleset(path=None):
     rules = doc.get("rules") or []
     if not isinstance(providers, dict) or not isinstance(rules, list) or not rules:
         raise SystemExit(f"rejected: ruleset {path} needs rule-providers and rules")
-    return {**providers, **(doc.get("pinned-providers") or {})}, [str(r) for r in rules]
+    pinned = doc.get("pinned-providers") or {}
+    return {name: pinned.get(name, spec) for name, spec in providers.items()}, [str(r) for r in rules]
 
 
 def _map_rule(rule: str) -> str:
     """上游规则的目标组换成本项目的组；MATCH 由调用方统一追加。"""
     parts = [p.strip() for p in rule.split(",")]
     keyword = parts[0].upper()
-    if keyword in ("MATCH", "FINAL"):
-        return rule
+    if keyword in ("MATCH", "FINAL") and len(parts) >= 2:
+        parts[1] = TARGET_MAP.get(parts[1], TARGET_DEFAULT)
+        return ",".join(parts)
+    if keyword == "SUB-RULE":
+        return ",".join(parts)
     if keyword in {"AND", "OR", "NOT"}:
         # AND,((DST-PORT,443),(NETWORK,UDP)),REJECT -> 目标在最后一段
         target = -2 if parts[-1] == "no-resolve" else -1
@@ -431,19 +441,67 @@ def _map_rules(rules) -> list:
     ]
 
 
+def merge_subscription_providers(config, providers, subscription_rules):
+    sub_rules = {name: [_map_rule(rule) for rule in entries]
+                 for name, entries in (config.get("sub-rules") or {}).items()}
+    definitions = config.get("rule-providers") or {}
+    required = required_rules({"rules": subscription_rules, "sub-rules": sub_rules})
+    names = required & definitions.keys()
+    reserved = providers.keys() | names
+    renamed = {}
+    for name in sorted(names):
+        spec = definitions[name]
+        if not re.fullmatch(r"[\w.-]+", name) or name in {".", ".."} or not isinstance(spec, dict):
+            raise ValueError("invalid subscription rule provider")
+        target = name
+        if name in providers:
+            base = f"subscription-{name}"
+            target, index = base, 2
+            while target in reserved:
+                target = f"{base}-{index}"
+                index += 1
+            reserved.add(target)
+            renamed[name] = target
+
+        spec = dict(spec)
+        if spec.get("type") == "http":
+            spec["path"] = f"./rule-providers/subscription/{target}.mrs"
+            spec["proxy"] = RULESET_PROXY
+        elif spec.get("type") == "file":
+            parts = PurePosixPath(spec.get("path") or "").parts
+            if len(parts) < 2 or parts[0] != "rule-providers" or ".." in parts:
+                raise ValueError(f"subscription rule provider {name} must use a file in rule-providers/")
+        elif spec.get("type") != "inline":
+            raise ValueError(f"unsupported subscription rule provider: {name}")
+        providers[target] = spec
+
+    def rewrite(rule):
+        return RULE_SET_REFERENCE.sub(
+            lambda match: match[1] + renamed.get(match[2].strip(), match[2]), rule,
+        )
+
+    if sub_rules:
+        config["sub-rules"] = {
+            name: [rewrite(rule) for rule in entries] for name, entries in sub_rules.items()
+        }
+    return [rewrite(rule) for rule in subscription_rules] if renamed else subscription_rules
+
+
 def apply_rules(config, subscription_rules, path=None):
     providers, selected = _load_ruleset(path)
     rules = _map_rules(selected)
+    for name, spec in providers.items():
+        if isinstance(spec, dict) and spec.get("type") == "http":
+            spec.setdefault("path", f"./rule-providers/{name}.mrs")
+            spec.setdefault("proxy", RULESET_PROXY)
     if SUB_RULES or not rules:
-        rules.extend(subscription_rules)
-    elif subscription_rules:
-        print(f"note: dropping {len(subscription_rules)} subscription rule(s)", file=sys.stderr)
+        rules.extend(merge_subscription_providers(config, providers, subscription_rules))
+    else:
+        config.pop("sub-rules", None)
+        if subscription_rules:
+            print(f"note: dropping {len(subscription_rules)} subscription rule(s)", file=sys.stderr)
     config["rules"] = [*PINNED_RULES, *rules, f"MATCH,{EXIT_GROUP}"]
     if providers:
-        for name, spec in providers.items():
-            if isinstance(spec, dict):
-                spec.setdefault("path", f"./rule-providers/{name}.mrs")
-                spec.setdefault("proxy", RULESET_PROXY)
         config["rule-providers"] = providers
     else:
         config.pop("rule-providers", None)
@@ -560,7 +618,6 @@ def main(dst: str, srcs: list) -> None:
         "external-controller-unix",
         "external-controller-pipe",
         "proxy-providers",
-        "rule-providers",
     ):
         cfg.pop(key, None)
 

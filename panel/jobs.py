@@ -9,6 +9,7 @@ import subprocess
 import sys
 import tempfile
 import urllib.parse
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import redirect_stdout
 from datetime import datetime, timezone
 from pathlib import Path
@@ -122,15 +123,32 @@ def reload_config(candidate):
 
 
 def warm():
+    def probe(node, query):
+        name = urllib.parse.quote(node, safe="")
+        try:
+            controller(f"/proxies/{name}/delay?{query}", timeout=8)
+        except (OSError, ValueError):
+            return False
+        return True
+
     for group in rules.read_config(CONFIG).get("proxy-groups") or []:
         if group["type"] not in ("fallback", "url-test", "load-balance"):
             continue
         name = urllib.parse.quote(group["name"], safe="")
-        query = urllib.parse.urlencode({"url": group.get("url") or "http://www.gstatic.com/generate_204",
-                                       "timeout": 6000})
         try:
-            controller(f"/group/{name}/delay?{query}", timeout=180)
+            state = controller(f"/proxies/{name}")
         except (OSError, ValueError):
+            print(f"Group probe unavailable: {group['name']}", file=sys.stderr)
+            continue
+        query = urllib.parse.urlencode({
+            "url": state.get("testUrl") or group.get("url") or "http://www.gstatic.com/generate_204",
+            "expected": state.get("expectedStatus") or group.get("expected-status") or "*",
+            "timeout": 6000,
+        })
+        # The group delay endpoint clears the fixed selection, including the watchdog's pin.
+        with ThreadPoolExecutor(max_workers=16) as workers:
+            results = list(workers.map(lambda node: probe(node, query), dict.fromkeys(state.get("all") or [])))
+        if not any(results):
             print(f"Group probe unavailable: {group['name']}", file=sys.stderr)
 
 
@@ -146,8 +164,8 @@ def archive(path, name):
         expired.unlink()
 
 
-def script(path, *args):
-    return subprocess.run([sys.executable, str(ROOT / path), *map(str, args)], check=False).returncode
+def script(path, *args, env=None):
+    return subprocess.run([sys.executable, str(ROOT / path), *map(str, args)], check=False, env=env).returncode
 
 
 def score():
@@ -241,10 +259,9 @@ def main():
             elif operation == "purity":
                 purity()
             elif operation == "watchdog":
-                with (RUNTIME / ".controller.lock").open("a") as lock:
-                    fcntl.flock(lock, fcntl.LOCK_EX)
-                    if script("tools/watchdog.py"):
-                        raise RuntimeError("watchdog failed")
+                env = {**os.environ, "MIHOMO_CONTROLLER_LOCK": str(RUNTIME / ".controller.lock")}
+                if script("tools/watchdog.py", env=env):
+                    raise RuntimeError("watchdog failed")
             elif operation == "rules":
                 candidate, rule_data = rulesets.stage_update(scratch, os.environ["PANEL_RULESET_SOURCE"])
                 check(candidate, CACHE)

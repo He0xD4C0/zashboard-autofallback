@@ -1,6 +1,8 @@
 """Regression checks for the migrated refresh transaction and managed core."""
 
+import fcntl
 import os
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -43,6 +45,33 @@ class RefreshTests(unittest.TestCase):
                  call.prepare_main(candidate), call.reload_config(candidate), call.warm()],
             )
             return degraded
+
+
+class WatchdogLockTests(unittest.TestCase):
+    def test_refresh_can_reload_while_watchdog_is_still_scanning(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            config, candidate = root / "config.yaml", root / "candidate.yaml"
+            lock_path = root / ".controller.lock"
+            candidate.write_text("rules: ['MATCH,DIRECT']")
+
+            def script(path, *args, env=None):
+                if path == "tools/watchdog.py":
+                    with lock_path.open("a") as lock:
+                        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    self.assertEqual(env["MIHOMO_CONTROLLER_LOCK"], str(lock_path))
+                    jobs.reload_config(candidate)
+                return 0
+
+            with (
+                patch.dict(os.environ, {"MIHOMO_SECRET": "test"}),
+                patch.object(sys, "argv", ["jobs.py", "watchdog"]),
+                patch.multiple(jobs, RUNTIME=root, ARTIFACTS=root, CONFIG=config, script=script),
+                patch.object(jobs.reload, "reload", return_value=0) as reload,
+            ):
+                self.assertEqual(jobs.main(), 0)
+            reload.assert_called_once()
+            self.assertEqual(config.read_text(), candidate.read_text())
 
 
 class CoreSwitchTests(unittest.TestCase):

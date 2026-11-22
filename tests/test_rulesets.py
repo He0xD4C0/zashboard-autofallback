@@ -78,6 +78,48 @@ class RuleSourceTests(unittest.TestCase):
 
 
 class RuleTransactionTests(unittest.TestCase):
+    def test_rule_update_keeps_subscription_provider_out_of_curated_manifest(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            active, config, cache = [root / name for name in ("active", "config", "cache")]
+            scratch = root / "scratch"
+            scratch.mkdir()
+            active.write_text(rulesets.encode({"rules": ["DOMAIN,old.example,DIRECT"]}))
+            subscription = {
+                "type": "file", "behavior": "domain", "format": "text",
+                "path": "rule-providers/subscription-assets/Ads",
+            }
+            config.write_text(rulesets.encode({
+                "rules": [*merge.PINNED_RULES, "DOMAIN,old.example,DIRECT", "RULE-SET,Ads,DIRECT", "MATCH,出口"],
+                "rule-providers": {"Ads": subscription},
+            }))
+            manifest_url = "https://example.com/rules.yaml"
+            provider_url = "https://example.com/ads.list"
+
+            def download(url, path, _limit):
+                if url == manifest_url:
+                    path.write_text(rulesets.encode({
+                        "rules": ["RULE-SET,Ads,REJECT"],
+                        "rule-providers": {"Ads": {
+                            "type": "http", "behavior": "domain", "format": "text", "url": provider_url,
+                        }},
+                    }))
+                else:
+                    self.assertEqual(url, provider_url)
+                    path.write_text("curated.example\n")
+
+            with (
+                patch.multiple(rulesets, ACTIVE=active, CONFIG=config, CACHE=cache, get=download),
+                patch.object(merge, "SUB_RULES", True),
+                patch.object(rulesets.rules, "validate_bundle"),
+            ):
+                candidate, manifest = rulesets.stage_update(scratch, manifest_url)
+            installed = yaml.safe_load(candidate.read_text())
+            self.assertIn("RULE-SET,Ads,REJECT", installed["rules"])
+            self.assertIn("RULE-SET,subscription-Ads,DIRECT", installed["rules"])
+            self.assertEqual(installed["rule-providers"]["subscription-Ads"], subscription)
+            self.assertEqual(set(yaml.safe_load(manifest)["pinned-providers"]), {"Ads"})
+
     def test_failed_readiness_restores_previous_config_and_source(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

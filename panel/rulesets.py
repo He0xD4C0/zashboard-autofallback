@@ -156,10 +156,16 @@ def seed():
         rules.atomic_text(ACTIVE, SEED.read_text(encoding="utf-8"))
 
 
+def pinned_providers(config, doc):
+    providers = rules.read_config(config).get("rule-providers") or {}
+    curated = doc.get("rule-providers") or {}
+    return {name: spec for name, spec in providers.items()
+            if name in curated and spec.get("type") == "file"}
+
+
 def pin_installed(config):
     doc = rules.read_config(ACTIVE)
-    providers = rules.read_config(config).get("rule-providers") or {}
-    pinned = {name: spec for name, spec in providers.items() if spec.get("type") == "file"}
+    pinned = pinned_providers(config, doc)
     if pinned != doc.get("pinned-providers", {}):
         doc["pinned-providers"] = pinned
         rules.atomic_text(ACTIVE, encode(doc))
@@ -186,7 +192,7 @@ def stage_update(scratch, url):
     merge.apply_rules(config, subscription_rules, staged)
     rules.atomic_text(candidate, encode(config))
     rules.prepare(candidate, CACHE, fetch=fetch_provider, force=True)
-    doc["pinned-providers"] = rules.read_config(candidate).get("rule-providers") or {}
+    doc["pinned-providers"] = pinned_providers(candidate, doc)
     return candidate, encode(doc)
 
 

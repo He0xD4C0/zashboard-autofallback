@@ -7,9 +7,15 @@ merge.py 在 import 时会读环境变量（secret、站点组、路径），所
 import importlib.util
 import io
 import os
+import tempfile
 import unittest
 from contextlib import redirect_stderr
+from pathlib import Path
 from unittest.mock import patch
+
+import yaml
+
+from tools.rules import required_rules
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -108,6 +114,50 @@ class RulesetTests(unittest.TestCase):
         self.assertEqual(sorted(providers), ["AI", "Ads", "CN"])
         self.assertEqual(len(rules), 5)
         self.assertEqual(len(self.merge._map_rules(rules)), 5)
+
+    def merge_subscription(self, enabled):
+        source = yaml.safe_load((Path(ROOT) / "tests/fixtures/dev-subscription.yaml").read_text())
+        source["rules"] = [
+            "AND,((RULE-SET,Ads),(NETWORK,tcp)),DIRECT",
+            "RULE-SET,subscription-Ads,REJECT",
+            "SUB-RULE,(NETWORK,tcp),custom",
+        ]
+        source["sub-rules"] = {"custom": ["RULE-SET,Ads,old-group", "MATCH,DIRECT"]}
+        source["rule-providers"] = {
+            "Ads": {"type": "http", "behavior": "domain", "url": "https://example.com/sub.yml",
+                    "path": "../../legacy-path"},
+            "subscription-Ads": {"type": "inline", "behavior": "domain", "payload": ["sub.example"]},
+            "unused": {"type": "inline", "behavior": "domain", "payload": ["unused.example"]},
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp)
+            src, dst = path / "sub.yaml", path / "config.yaml"
+            src.write_text(yaml.safe_dump(source))
+            with patch.multiple(self.merge, SUB_RULES=enabled, API_SECRET="test", SCORES=str(path / "scores.json")):
+                self.merge.main(str(dst), [str(src)])
+            return yaml.safe_load(dst.read_text())
+
+    def test_subscription_rule_providers_survive_merge_with_name_collisions(self):
+        config = self.merge_subscription(enabled=True)
+        providers = config["rule-providers"]
+        self.assertEqual(providers["Ads"]["url"], "https://example.com/ads.mrs")
+        self.assertEqual(providers["subscription-Ads-2"]["url"], "https://example.com/sub.yml")
+        self.assertEqual(providers["subscription-Ads-2"]["path"],
+                         "./rule-providers/subscription/subscription-Ads-2.mrs")
+        self.assertEqual(providers["subscription-Ads"]["payload"], ["sub.example"])
+        self.assertNotIn("unused", providers)
+        self.assertIn("RULE-SET,Ads,REJECT", config["rules"])
+        self.assertIn("AND,((RULE-SET,subscription-Ads-2),(NETWORK,tcp)),DIRECT", config["rules"])
+        self.assertIn("SUB-RULE,(NETWORK,tcp),custom", config["rules"])
+        self.assertEqual(config["sub-rules"]["custom"],
+                         ["RULE-SET,subscription-Ads-2,出口", "MATCH,DIRECT"])
+        self.assertEqual(required_rules(config), providers.keys())
+
+    def test_default_merge_drops_subscription_providers_and_sub_rules(self):
+        config = self.merge_subscription(enabled=False)
+        self.assertEqual(set(config["rule-providers"]), {"AI", "Ads", "CN"})
+        self.assertNotIn("sub-rules", config)
+        self.assertNotIn("RULE-SET,subscription-Ads,REJECT", config["rules"])
 
 
 if __name__ == "__main__":

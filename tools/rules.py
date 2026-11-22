@@ -17,11 +17,14 @@ from pathlib import Path
 import yaml
 
 
+RULE_SET_REFERENCE = re.compile(r"((?:^|\()\s*RULE-SET\s*,\s*)([^,)]+)", re.IGNORECASE)
+
+
 def required_rules(config):
     fields = [*(config.get("rules") or [])]
     for rules in (config.get("sub-rules") or {}).values():
         fields.extend(rules)
-    names = {name.strip() for rule in fields for name in re.findall(r"(?:^|\()RULE-SET,([^,)]+)", rule)}
+    names = {match[2].strip() for rule in fields for match in RULE_SET_REFERENCE.finditer(rule)}
     dns = config.get("dns") or {}
     for item in dns.get("fake-ip-filter") or []:
         if item.startswith("rule-set:"):
