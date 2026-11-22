@@ -156,7 +156,7 @@ watch(documentVisible, () => {
   fetchProxies()
 })
 
-checkUIUpdate()
+checkUIUpdate().catch(() => {})
 </script>
 
 <style>

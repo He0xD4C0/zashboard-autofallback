@@ -18,6 +18,11 @@ import { createRouter, createWebHashHistory } from 'vue-router'
 
 const childrenRouter = [
   {
+    path: 'diagnostics',
+    name: ROUTE_NAME.diagnostics,
+    component: () => import('@/views/DiagnosticsPage.vue'),
+  },
+  {
     path: 'proxies',
     name: ROUTE_NAME.proxies,
     component: ProxiesPage,

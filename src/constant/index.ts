@@ -250,6 +250,7 @@ export enum ROUTE_NAME {
   logs = 'logs',
   rules = 'rules',
   settings = 'settings',
+  diagnostics = 'diagnostics',
   setup = 'setup',
 }
 
@@ -260,6 +261,7 @@ export const ROUTE_ICON_MAP = {
   [ROUTE_NAME.rules]: SwatchIcon,
   [ROUTE_NAME.logs]: DocumentTextIcon,
   [ROUTE_NAME.settings]: Cog6ToothIcon,
+  [ROUTE_NAME.diagnostics]: CubeTransparentIcon,
   [ROUTE_NAME.setup]: CubeTransparentIcon,
 }
 

@@ -1,7 +1,27 @@
 :80 {
-  file_server
+	handle /autofallback/state.json {
+		route {
+			header Cache-Control "no-store"
+			forward_auth {$MIHOMO_UPSTREAM:core:9090} {
+				uri /version
+			}
+			root * /diagnostics
+			rewrite * /state.json
+			file_server
+		}
+	}
 
-  root * .
-  
-  try_files {path} /index.html
+	handle /mihomo-api/dns-query* {
+		respond 404
+	}
+
+	handle_path /mihomo-api/* {
+		reverse_proxy {$MIHOMO_UPSTREAM:core:9090}
+	}
+
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
 }
